@@ -1,8 +1,8 @@
 name: Build and Push Docker Image to GAR # Changed name slightly for clarity
 on:
-  # push:
-  # branches:
-  # - main
+  push:
+    branches:
+      - main
   pull_request: # Good to add for testing builds
     branches:
       - main
