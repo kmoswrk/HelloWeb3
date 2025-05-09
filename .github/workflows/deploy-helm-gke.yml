@@ -48,6 +48,64 @@ jobs:
         uses: azure/setup-helm@v3 # Or docker/setup-helm-action, or manual install
         with:
           version: "v3.12.3" # Specify a recent Helm version
+      - name: Debug Variables and Paths # ADD THIS STEP
+        run: |
+          echo "--- Debugging Helm Deployment Variables ---"
+          echo "HELM_RELEASE_NAME: '${{ env.HELM_RELEASE_NAME }}'"
+          echo "HELM_CHART_PATH: '${{ env.HELM_CHART_PATH }}'"
+          echo "K8S_NAMESPACE: '${{ env.K8S_NAMESPACE }}'"
+
+          echo "--- Checking HELM_CHART_PATH ---"
+          CHART_PATH_VAL="${{ env.HELM_CHART_PATH }}" # Store in a shell variable for easier testing
+          echo "Value of CHART_PATH_VAL: ->${CHART_PATH_VAL}<-"
+          echo "Length of CHART_PATH_VAL: ${#CHART_PATH_VAL}"
+
+          if [ -z "${CHART_PATH_VAL}" ]; then
+            echo "ERROR: HELM_CHART_PATH is resolving to an empty string!"
+            exit 1
+          fi
+
+          echo "--- File System Check ---"
+          echo "Current PWD: $(pwd)"
+          echo "Listing contents of PWD:"
+          ls -la
+
+          if [ -d "${CHART_PATH_VAL}" ]; then
+            echo "SUCCESS: HELM_CHART_PATH '${CHART_PATH_VAL}' exists as a directory."
+            echo "Listing contents of '${CHART_PATH_VAL}':"
+            ls -la "${CHART_PATH_VAL}"
+            if [ -f "${CHART_PATH_VAL}/Chart.yaml" ]; then
+              echo "SUCCESS: Chart.yaml found in '${CHART_PATH_VAL}'."
+            else
+              echo "ERROR: Chart.yaml NOT found in '${CHART_PATH_VAL}'!"
+              exit 1
+            fi
+          else
+            echo "ERROR: HELM_CHART_PATH '${CHART_PATH_VAL}' does NOT exist as a directory."
+            echo "Attempting to list ./charts (if it exists relative to PWD):"
+            ls -la ./charts || echo "'./charts' directory not found at PWD."
+            exit 1
+          fi
+          echo "--- End of Debugging ---"
+      - name: Deploy Helm chart
+        run: |
+          # Ensure no leading/trailing whitespace issues with backslashes for line continuation
+          # Also, quote arguments that might contain special characters or come from variables, as a best practice.
+          helm upgrade --install "${{ env.HELM_RELEASE_NAME }}" \
+            "${{ env.HELM_CHART_PATH }}" \
+            --namespace "${{ env.K8S_NAMESPACE }}" \
+            --create-namespace \
+            --values "${{ env.HELM_CHART_PATH }}/values.yaml" \
+            --values "${{ env.HELM_CHART_PATH }}/values/deploy-values.yml" \
+            --set image.repository="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}" \
+            --set image.tag="${{ github.sha }}" \
+            --set secrets.polygonscanApiKey="${{ secrets.POLYGONSCAN_API_KEY }}" \
+            --set serviceAccount.create=true \
+            --set serviceAccount.name="${{ env.KSA_NAME }}" \
+            --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="${{ secrets.TF_OUTPUT_GSA_EMAIL }}" \
+            --wait \
+            --timeout 10m
+            # --debug # Uncomment for verbose Helm output if the problem persists after path verification
       - name: Deploy Helm chart
         run: |
           helm upgrade --install ${{ env.HELM_RELEASE_NAME }} \
