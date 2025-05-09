@@ -1,43 +1,75 @@
-# .github/workflows/ci-cd.yml (simplified snippet for Docker build/push)
-name: Build and Deploy to GKE
+name: Build and Push Docker Image to GAR # Changed name slightly for clarity
 on:
   push:
     branches:
       - main
+  pull_request: # Good to add for testing builds
+    branches:
+      - main
 env:
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }} # Store in GitHub Secrets
-  GCP_REGION: "us-central1" # Or your preferred region
+  # --- GCP Configuration ---
+  # GCP_PROJECT_ID is available via secrets, but you can define it here if needed elsewhere directly
+  # GCP_PROJECT_ID_FROM_ENV: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: "us-central1"
+  # --- Artifact Registry Configuration ---
   GAR_REPO_NAME: "polygon-monitor-repo"
+  # --- Docker Image Configuration ---
   IMAGE_NAME: "polygon-monitor-app"
 jobs:
   build-and-push-image:
+    name: Build and Push Docker Image
     runs-on: ubuntu-latest
     permissions:
       contents: "read"
       id-token: "write" # Required for Workload Identity Federation
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # Use latest checkout action
+      - name: Debug Secrets (Remove after testing)
+        run: |
+          echo "GCP_PROJECT_ID from secret: ${{ secrets.GCP_PROJECT_ID }}"
+          echo "GCP_WIF_PROVIDER from secret: ${{ secrets.GCP_WIF_PROVIDER }}"
+          echo "GCP_SERVICE_ACCOUNT from secret: ${{ secrets.GCP_SERVICE_ACCOUNT }}"
       - name: Authenticate to Google Cloud
-        uses: "google-github-actions/auth@v1"
+        id: auth
+        uses: "google-github-actions/auth@v2" # Updated to v2
         with:
-          workload_identity_provider: "projects/${{ env.GCP_PROJECT_ID }}/locations/global/workloadIdentityPools/YOUR_WIF_POOL_ID/providers/YOUR_WIF_PROVIDER_ID" # Configure WIF
-          service_account: "your-ci-cd-gsa@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com" # GSA for CI/CD
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }} # Corrected
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }} # Corrected
       - name: Set up Cloud SDK
-        uses: "google-github-actions/setup-gcloud@v1"
+        uses: "google-github-actions/setup-gcloud@v2" # Updated to v2
+        # with:
+        #   project_id: ${{ secrets.GCP_PROJECT_ID }} # Optional: gcloud should pick up project from authenticated SA
       - name: Configure Docker for GAR
-        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
-      - name: Build Docker image
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --project=${{ secrets.GCP_PROJECT_ID }} --quiet
+        # Added --project and --quiet
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Determine Image Tags
+        id: image_tags
         run: |
-          docker build -t ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            -t ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}:latest \
-            .
-      - name: Push Docker image to GAR
+          GAR_IMAGE_PATH="${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}"
+          SHA_TAG="${GAR_IMAGE_PATH}:${{ github.sha }}"
+          echo "SHA_TAG=${SHA_TAG}" >> $GITHUB_OUTPUT
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            LATEST_TAG="${GAR_IMAGE_PATH}:latest"
+            echo "LATEST_TAG=${LATEST_TAG}" >> $GITHUB_OUTPUT
+          fi
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile # Assuming Dockerfile is in root
+          tags: |
+            ${{ steps.image_tags.outputs.SHA_TAG }}
+            ${{ steps.image_tags.outputs.LATEST_TAG }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }} # Push only on main branch pushes
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Print Image Details
+        if: always()
         run: |
-          docker push ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker push ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}:latest
-
-# ... (Deploy to GKE job using Helm would follow, using the pushed image)
-# The Helm chart's values.yaml or --set flags will use:
-# image.repository: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}
-# image.tag: ${{ github.sha }}
+          echo "SHA tagged image: ${{ steps.image_tags.outputs.SHA_TAG }}"
+          if [[ -n "${{ steps.image_tags.outputs.LATEST_TAG }}" ]]; then
+            echo "Latest tagged image: ${{ steps.image_tags.outputs.LATEST_TAG }}"
+          fi
