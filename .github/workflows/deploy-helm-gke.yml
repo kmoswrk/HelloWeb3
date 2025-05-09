@@ -15,6 +15,10 @@ env:
   K8S_NAMESPACE: "polygon-monitor" # Must match var.polygon_monitor_app_k8s_namespace
   KSA_NAME: "polygon-monitor-app-ksa" # Must match var.polygon_monitor_app_k8s_sa_name
   HELM_CHART_PATH: "./helm/polygon-monitor-app" # Ensure this path is correct
+  # The NAME of the static IP resource created by Terraform
+  STATIC_IP_NAME: "polygon-monitor-cluster-ingress-ip" # Should match your TF resource name
+  # Set to "letsencrypt-prod" after testing with "letsencrypt-staging"
+  CERT_MANAGER_ISSUER: "letsencrypt-staging"
 permissions:
   contents: "read"
   id-token: "write"
@@ -41,6 +45,16 @@ jobs:
           gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} \
             --region ${{ env.GCP_REGION }} \
             --project ${{ env.GCP_PROJECT_ID }}
+      - name: Get Static IP Address
+        id: get_ip
+        run: |
+          IP_ADDRESS=$(gcloud compute addresses describe ${{ env.STATIC_IP_NAME }} --global --project=${{ env.GCP_PROJECT_ID }} --format='value(address)')
+          if [ -z "$IP_ADDRESS" ]; then
+            echo "Error: Could not retrieve static IP address for ${{ env.STATIC_IP_NAME }}"
+            exit 1
+          fi
+          echo "STATIC_IP_ADDRESS=$IP_ADDRESS" >> $GITHUB_ENV
+          echo "Fetched IP: $IP_ADDRESS"
       - name: Set up Helm
         uses: azure/setup-helm@v3
         with:
@@ -86,26 +100,35 @@ jobs:
           helm lint "${{ env.HELM_CHART_PATH }}"
           echo "Helm lint completed successfully."
       - name: Deploy Helm chart
+        env:
+          # Make the fetched IP available to this step
+          APP_HOSTNAME: "polygon-monitor-app.${{ env.STATIC_IP_ADDRESS }}.nip.io"
+          TLS_SECRET_NAME: "polygon-monitor-app-tls" # Matches values.yaml
         run: |
           echo "--- Preparing for Helm Upgrade ---"
-          echo "Using Release Name: '${{ env.HELM_RELEASE_NAME }}'"
-          echo "Using Chart Path:   '${{ env.HELM_CHART_PATH }}'"
-          echo "Using Namespace:    '${{ env.K8S_NAMESPACE }}'"
+          echo "Using App Hostname: '${APP_HOSTNAME}'"
+          echo "Using Static IP Name: '${{ env.STATIC_IP_NAME }}'"
+          echo "Using Cert-Manager Issuer: '${{ env.CERT_MANAGER_ISSUER }}'"
           echo "--- Helm Command ---"
 
-          # Adding --debug to Helm for more verbose output from Helm itself
           helm upgrade --install "${{ env.HELM_RELEASE_NAME }}" \
             "${{ env.HELM_CHART_PATH }}" \
             --namespace "${{ env.K8S_NAMESPACE }}" \
             --create-namespace \
             --values "${{ env.HELM_CHART_PATH }}/values.yaml" \
-            --values "${{ env.HELM_CHART_PATH }}/values/deploy-values.yml" \
+            # Optional: --values "${{ env.HELM_CHART_PATH }}/values/deploy-values.yml" \
             --set image.repository="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}" \
             --set image.tag="${{ github.sha }}" \
             --set secrets.polygonscanApiKey="${{ secrets.POLYGONSCAN_API_KEY }}" \
             --set serviceAccount.create=true \
             --set serviceAccount.name="${{ env.KSA_NAME }}" \
             --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="${{ secrets.TF_OUTPUT_GSA_EMAIL }}" \
+            --set ingress.enabled=true \
+            --set ingress.annotations."kubernetes\.io/ingress\.global-static-ip-name"="${{ env.STATIC_IP_NAME }}" \
+            --set ingress.annotations."cert-manager\.io/cluster-issuer"="${{ env.CERT_MANAGER_ISSUER }}" \
+            --set ingress.hosts[0].host="${APP_HOSTNAME}" \
+            --set ingress.tls[0].hosts[0]="${APP_HOSTNAME}" \
+            --set ingress.tls[0].secretName="${TLS_SECRET_NAME}" \
             --wait \
             --timeout 10m \
             --debug

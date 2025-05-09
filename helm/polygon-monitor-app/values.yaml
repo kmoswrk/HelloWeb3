@@ -16,39 +16,52 @@ fullnameOverride: "" # Keep this empty to use default naming convention <release
 # GSA = Google Service Account (for Workload Identity)
 serviceAccount:
   create: true
-  # Name of the KSA to create or use.
-  # Should match var.polygon_monitor_app_k8s_sa_name from Terraform ('polygon-monitor-app-ksa').
   name: "polygon-monitor-app-ksa"
-  annotations:
-    {}
-    # This will be populated by CI/CD or helm install command:
-    # iam.gke.io/gcp-service-account: "GSA_EMAIL_FROM_TERRAFORM_OUTPUT"
+  annotations: {} # Populated by CI/CD
 
 podAnnotations:
-  # Annotations for Prometheus to scrape metrics
   prometheus.io/scrape: "true"
-  # The HelloWeb3 app exposes metrics on its main port (e.g., 8080) at /metrics
-  prometheus.io/port: "8080" # This should match appContainerPort
+  prometheus.io/port: "8080"
   prometheus.io/path: "/metrics"
 
-# Application specific configuration
-appContainerPort: 8080 # Port the Node.js app listens on INSIDE the container
-# The HelloWeb3 app uses the PORT environment variable.
+appContainerPort: 8080
 
-# Secrets to be created and mounted.
-# The key 'polygonscanApiKey' will be used to create a K8s secret.
-# The value for this MUST be provided during helm install/upgrade.
 secrets:
-  polygonscanApiKey: "" # Example: --set secrets.polygonscanApiKey=YOUR_ACTUAL_KEY
+  polygonscanApiKey: "" # Set by CI/CD
 
 service:
-  type: LoadBalancer # Exposes the app publicly via a GCP Load Balancer
-  port: 80 # External port on the LoadBalancer that maps to targetPort
-  targetPort: http # Name of the port in the deployment spec (which maps to appContainerPort)
+  type: NodePort # Important for Ingress
+  port: 80
+  targetPort: http
 
 ingress:
-  enabled: false # We are using Service type LoadBalancer for simplicity
-
+  enabled: false # Set to true by CI/CD or when deploying
+  className: "gce" # Explicitly set for GKE default Ingress
+  annotations:
+    # cert-manager annotation to use the ClusterIssuer
+    # This will be overridden by CI/CD to 'letsencrypt-prod' after testing
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+    # Annotation for GKE to use a specific static IP
+    kubernetes.io/ingress.global-static-ip-name: "" # Will be set by CI/CD (e.g., "polygon-monitor-cluster-ingress-ip")
+    # Optional: Force HTTPS redirect (cert-manager creates the TLS secret)
+    # ingress.gcp.kubernetes.io/pre-shared-cert: "will-be-managed-by-cert-manager" # Not needed with cert-manager
+    # kubernetes.io/ingress.allow-http: "false" # If you only want HTTPS
+    # For HTTP to HTTPS redirect with GCE Ingress (better to use FrontendConfig if needed)
+    # networking.gke.io/v1beta1.FrontendConfig: "my-frontend-config"
+  hosts:
+    - host: app.example.nip.io # Placeholder, will be overridden by CI/CD
+      paths:
+        - path: /*
+          pathType: ImplementationSpecific
+  tls:
+    # cert-manager will create and manage the secret.
+    # The secretName is derived from the host if not specified,
+    # or you can specify it.
+    - hosts:
+        - app.example.nip.io # Placeholder, will be overridden by CI/CD
+      secretName:
+        polygon-monitor-app-tls # cert-manager will create this secret
+        # containing the certificate for the host above.
 resources:
   limits:
     cpu: 500m

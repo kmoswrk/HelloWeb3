@@ -1,0 +1,51 @@
+# monitoring-values.yaml
+
+# --- Prometheus Configuration ---
+prometheus:
+  prometheusSpec:
+    additionalScrapeConfigs:
+      - job_name: "polygon-monitor-app"
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names: ["polygon-monitor"] # Namespace of YOUR application
+        relabel_configs:
+          # Step 1: Keep only endpoints that belong to the 'polygon-monitor-app' service.
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: "polygon-monitor-app" # <--- THIS IS THE FIX: Use the literal service name
+
+          # Step 2: Keep only endpoints where the port is named 'http'.
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
+
+          # Step 3: Set the metrics path. Your app exposes metrics at /metrics on port 8080.
+          - target_label: __metrics_path__
+            replacement: /metrics
+
+          # Step 4: (Optional but good practice) Relabel namespace and service for clarity in Prometheus.
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name] # This will now correctly capture 'polygon-monitor-app'
+            target_label: kubernetes_service_name # And label it as such in Prometheus
+# --- Grafana Configuration ---
+grafana:
+  enabled: true
+  service:
+    type: LoadBalancer
+    portName: http-grafana
+    port: 80 # Grafana service will listen on port 80
+    targetPort: 3000 # Grafana pod listens on 3000
+  persistence:
+    enabled: false # For quick setup; enable for production
+  # ingress: # Uncomment and configure if you prefer Ingress over LoadBalancer for Grafana
+  #   enabled: false
+  #   hosts:
+  #     - grafana.your-domain.com
+  #   annotations:
+  #     kubernetes.io/ingress.global-static-ip-name: "grafana-static-ip"
+  #     networking.gke.io/managed-certificates: "grafana-cert"
+# Other components (alertmanager, kubeStateMetrics, nodeExporter)
+# can be left as default (enabled) or disabled if needed.
+# For a full experience, keep them enabled.
