@@ -1,0 +1,158 @@
+# Nix and devenv
+result*
+.direnv/
+flake.lock
+.devenv/
+*.devenv.*
+.pre-commit-config.yaml
+
+# Secrets
+# Environment variable files (ALWAYS ignore these)
+.env
+.env.*
+.gcloud_config/
+*.tfstate
+*.tfstate.backup
+tfplan
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json # If you use yarn.lock or only commit one lock file
+yarn.lock         # If you use package-lock.json or only commit one lock file
+# Terraform crash log
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform/
+.terraform.lock.hcl
+# IDE specific
+.vscode/
+.idea/
+*.swp
+*.swo
+# macOS
+.DS_Store
+# General
+# -----------------------------------------------------------------------------
+# OS-generated files
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+# IDE / Editor specific files
+*.sublime-project
+*.sublime-workspace
+*.komodoproject
+*.komodoedit
+*~
+# Log files
+*.log
+logs
+# Temporary files
+*.tmp
+*.temp
+# Nix & Devenv
+# Nix build results (symlinks)
+.gc-roots/
+# Direnv state (if used with Nix/devenv)
+# Devenv local overrides and state
+devenv.local.nix
+# If you use devenv.local.yaml for local overrides
+# devenv.local.yaml
+# Node.js / npm / yarn
+# Dependencies
+# Optional: Yarn PnP files (if you ever switch or experiment)
+.pnp.*
+# Local npm cache files
+.npm/
+# Docker
+# Often, Docker images are built and pushed, not stored in git.
+# If you have local Docker compose overrides:
+# docker-compose.override.yml
+# docker-compose.local.yml
+# Terraform
+# Local Terraform state (you're using a GCS backend, but these might be generated locally)
+*.tfstate.*.backup
+# Terraform plan files
+*.tfplan
+tfplan*
+# .terraform directory containing provider plugins and modules
+# Crash log files
+# Terraform override files (often used for local testing/secrets)
+# It's better to use .auto.tfvars for variables and commit .tfvars.example
+*.tfvars
+# If you decide to commit non-sensitive .tfvars, then explicitly ignore secret ones:
+# secrets.tfvars
+# override.tf
+# override.tf.json
+# *_override.tf
+# *_override.tf.json
+# Helm
+# Downloaded chart dependencies (if using `helm dependency build`)
+helm/*/charts/
+# Helm-generated manifests
+**/manifests/
+**/rendered/
+**/*-generated.yaml
+
+# Helm local files (if applicable)
+helm/**/tmp/
+# Packaged chart files (you commit the source, not the .tgz usually)
+*.tgz
+# Secrets & Environment Specific Files
+# GCP Service Account keys or other credential files
+*-sa-key.json
+gcp-credentials.json
+credentials.json
+# Specific to your file list
+# lt.txt - Assuming this is a temporary or local test file.
+# If it's important project data, remove this line.
+lt.txt
+# Build artifacts (if any, e.g., from a frontend build step not covered)
+# build/
+# dist/
+# out/
+# Python virtual environments (if Python ever gets added)
+# .venv/
+# venv/
+# ENV/
+# env/
+# __pycache__/
+# *.pyc
+# If you explicitly configure a project-local pnpm store (e.g., in .npmrc with store-dir = .pnpm-store)
+# then uncomment and use the line below. Otherwise, pnpm uses a global store.
+# .pnpm-store/
+pnpm-debug.log*
+lerna-debug.log* # If using Lerna with PNPM
+# Build output / Distribution (general, adapt to your project)
+dist/
+dist-*/
+build/
+.out/
+.next/ # If using Next.js
+# Coverage reports
+coverage/
+.nyc_output/
+# Environment variables (ensure .env.template or .env.example IS committed)
+!.env.example
+!.env.template
+# IDE & Editor specific (common examples)
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS generated files
+# Other project-specific ignores from your plan
+# ------------------------------------------------------------------------------
+result # Nix build result symlink
+.gcloud_config/ # For local gcloud config
+tfplan # Terraform plan file
+terraform.tfstate # Local terraform state (if not using remote backend immediately)
+terraform.tfstate.backup # Local terraform state backup
+.terraform/ # Terraform plugins

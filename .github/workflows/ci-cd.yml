@@ -1,0 +1,43 @@
+# .github/workflows/ci-cd.yml (simplified snippet for Docker build/push)
+name: Build and Deploy to GKE
+on:
+  push:
+    branches:
+      - main
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }} # Store in GitHub Secrets
+  GCP_REGION: "us-central1" # Or your preferred region
+  GAR_REPO_NAME: "polygon-monitor-repo"
+  IMAGE_NAME: "polygon-monitor-app"
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: "read"
+      id-token: "write" # Required for Workload Identity Federation
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Authenticate to Google Cloud
+        uses: "google-github-actions/auth@v1"
+        with:
+          workload_identity_provider: "projects/${{ env.GCP_PROJECT_ID }}/locations/global/workloadIdentityPools/YOUR_WIF_POOL_ID/providers/YOUR_WIF_PROVIDER_ID" # Configure WIF
+          service_account: "your-ci-cd-gsa@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com" # GSA for CI/CD
+      - name: Set up Cloud SDK
+        uses: "google-github-actions/setup-gcloud@v1"
+      - name: Configure Docker for GAR
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            -t ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}:latest \
+            .
+      - name: Push Docker image to GAR
+        run: |
+          docker push ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}:latest
+
+# ... (Deploy to GKE job using Helm would follow, using the pushed image)
+# The Helm chart's values.yaml or --set flags will use:
+# image.repository: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}
+# image.tag: ${{ github.sha }}

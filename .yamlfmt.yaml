@@ -1,0 +1,4 @@
+gitignore_excludes: true
+exclude:
+  - pnpm-lock.yaml
+  - helm/
