@@ -35,7 +35,9 @@ service:
   targetPort: http
 
 ingress:
-  enabled: false # Set to true by CI/CD or when deploying
+  enabled: true # Set to true by CI/CD or when deploying
+  enableTls: false
+
   className: "gce" # Explicitly set for GKE default Ingress
   annotations:
     # cert-manager annotation to use the ClusterIssuer

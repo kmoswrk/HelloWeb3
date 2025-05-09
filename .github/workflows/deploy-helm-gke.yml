@@ -102,11 +102,33 @@ jobs:
       - name: Deploy Helm chart
         env:
           APP_HOSTNAME: "polygon-monitor-app.${{ env.STATIC_IP_ADDRESS }}.nip.io"
-          TLS_SECRET_NAME: "polygon-monitor-app-tls"
+          TLS_SECRET_NAME: "polygon-monitor-app-tls" # Still define it, but won't be used by main ingress initially
         run: |
-          echo "--- Preparing for Helm Upgrade ---"
+          echo "--- Preparing for Helm Upgrade (TEST RUN) ---"
+          echo "INFO: Main Ingress will be deployed WITHOUT the TLS block initially."
+          echo "      Cert-manager will attempt to get the certificate."
+          echo "      If successful, a subsequent deployment will enable TLS on the main Ingress."
           echo "Using App Hostname: '${APP_HOSTNAME}'"
           echo "Using Static IP Name: '${{ env.STATIC_IP_NAME }}'"
           echo "Using Cert-Manager Issuer: '${{ env.CERT_MANAGER_ISSUER }}'"
-          echo "--- Helm Command ---"
-          helm upgrade --install "${{ env.HELM_RELEASE_NAME }}" "${{ env.HELM_CHART_PATH }}" --namespace "${{ env.K8S_NAMESPACE }}" --create-namespace --values "${{ env.HELM_CHART_PATH }}/values.yaml" --set image.repository="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}" --set image.tag="${{ github.sha }}" --set secrets.polygonscanApiKey="${{ secrets.POLYGONSCAN_API_KEY }}" --set serviceAccount.create=true --set serviceAccount.name="${{ env.KSA_NAME }}" --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="${{ secrets.TF_OUTPUT_GSA_EMAIL }}" --set ingress.enabled=true --set ingress.annotations."kubernetes\.io/ingress\.global-static-ip-name"="${{ env.STATIC_IP_NAME }}" --set ingress.annotations."cert-manager\.io/cluster-issuer"="${{ env.CERT_MANAGER_ISSUER }}" --set ingress.hosts[0].host="${APP_HOSTNAME}" --set ingress.tls[0].hosts[0]="${APP_HOSTNAME}" --set ingress.tls[0].secretName="${TLS_SECRET_NAME}" --wait --timeout 10m --debug
+          echo "--- Helm Command (TEST RUN) ---"
+          helm upgrade --install "${{ env.HELM_RELEASE_NAME }}" "${{ env.HELM_CHART_PATH }}" \
+            --namespace "${{ env.K8S_NAMESPACE }}" \
+            --create-namespace \
+            --values "${{ env.HELM_CHART_PATH }}/values.yaml" \
+            --set image.repository="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}" \
+            --set image.tag="${{ github.sha }}" \
+            --set secrets.polygonscanApiKey="${{ secrets.POLYGONSCAN_API_KEY }}" \
+            --set serviceAccount.create=true \
+            --set serviceAccount.name="${{ env.KSA_NAME }}" \
+            --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="${{ secrets.TF_OUTPUT_GSA_EMAIL }}" \
+            --set ingress.enabled=true \
+            --set ingress.annotations."kubernetes\.io/ingress\.global-static-ip-name"="${{ env.STATIC_IP_NAME }}" \
+            --set ingress.annotations."cert-manager\.io/cluster-issuer"="${{ env.CERT_MANAGER_ISSUER }}" \
+            --set ingress.hosts[0].host="${APP_HOSTNAME}" \
+            --set ingress.enableTls=false \ # <--- KEY CHANGE FOR THE TEST: Explicitly disable TLS section in Ingress template
+            # The following two lines for ingress.tls are now effectively ignored by the template due to ingress.enableTls=false
+            # but it's cleaner to comment them out or remove them for the test if ingress.enableTls=false is the sole controller
+            # --set ingress.tls[0].hosts[0]="${APP_HOSTNAME}" \
+            # --set ingress.tls[0].secretName="${TLS_SECRET_NAME}" \
+            --wait --timeout 10m --debug
