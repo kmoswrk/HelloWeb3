@@ -1,27 +1,23 @@
+# .github/workflows/deploy-helm-gke.yml
 name: Deploy Application to GKE via Helm
 on:
   push:
     branches:
       - main
-  workflow_dispatch: # Allows manual triggering from the Actions tab
+  workflow_dispatch:
 env:
-  # --- GCP Configuration (align with your Terraform and Docker CI) ---
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }} # For gcloud commands
-  GCP_REGION: "us-central1" # Default region from your variables.tf
-  GKE_CLUSTER_NAME: "polygon-monitor-cluster" # Default cluster name from your variables.tf
-  # --- Artifact Registry & Image Configuration (align with your Docker CI) ---
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: "us-central1"
+  GKE_CLUSTER_NAME: "polygon-monitor-cluster" # Or your actual TF output/variable
   GAR_REPO_NAME: "polygon-monitor-repo"
   IMAGE_NAME: "polygon-monitor-app"
-  # --- Helm Configuration ---
   HELM_RELEASE_NAME: "polygon-monitor-app"
-  # Namespace where the app will be deployed, must match var.polygon_monitor_app_k8s_namespace
-  K8S_NAMESPACE: "polygon-monitor"
-  # KSA name, must match var.polygon_monitor_app_k8s_sa_name and values.yaml serviceAccount.name
-  KSA_NAME: "polygon-monitor-app-ksa"
-  HELM_CHART_PATH: "./helm/polygon-monitor-app" # Adjust if your chart is elsewhere
+  K8S_NAMESPACE: "polygon-monitor" # Must match var.polygon_monitor_app_k8s_namespace
+  KSA_NAME: "polygon-monitor-app-ksa" # Must match var.polygon_monitor_app_k8s_sa_name
+  HELM_CHART_PATH: "./helm/polygon-monitor-app" # Ensure this path is correct
 permissions:
   contents: "read"
-  id-token: "write" # Required for Workload Identity Federation
+  id-token: "write"
 jobs:
   deploy-to-gke:
     name: Deploy to GKE
@@ -34,7 +30,7 @@ jobs:
         uses: "google-github-actions/auth@v2"
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }} # This SA needs GKE deploy permissions
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - name: Set up Cloud SDK
         uses: "google-github-actions/setup-gcloud@v2"
         with:
@@ -46,52 +42,58 @@ jobs:
             --region ${{ env.GCP_REGION }} \
             --project ${{ env.GCP_PROJECT_ID }}
       - name: Set up Helm
-        uses: azure/setup-helm@v3 # Or docker/setup-helm-action, or manual install
+        uses: azure/setup-helm@v3
         with:
-          version: "v3.12.3" # Specify a recent Helm version
-      - name: Debug Variables and Paths # ADD THIS STEP
+          version: "v3.12.3" # Or a newer stable version
+      - name: Debug Variables and Paths (CRITICAL - CHECK THIS OUTPUT)
+        id: debug_paths # Give it an ID if you need to reference its output
         run: |
           echo "--- Debugging Helm Deployment Variables ---"
-          echo "HELM_RELEASE_NAME: '${{ env.HELM_RELEASE_NAME }}'"
-          echo "HELM_CHART_PATH: '${{ env.HELM_CHART_PATH }}'"
-          echo "K8S_NAMESPACE: '${{ env.K8S_NAMESPACE }}'"
-
-          echo "--- Checking HELM_CHART_PATH ---"
-          CHART_PATH_VAL="${{ env.HELM_CHART_PATH }}" # Store in a shell variable for easier testing
-          echo "Value of CHART_PATH_VAL: ->${CHART_PATH_VAL}<-"
-          echo "Length of CHART_PATH_VAL: ${#CHART_PATH_VAL}"
-
-          if [ -z "${CHART_PATH_VAL}" ]; then
-            echo "ERROR: HELM_CHART_PATH is resolving to an empty string!"
+          echo "1. HELM_RELEASE_NAME: '${{ env.HELM_RELEASE_NAME }}'"
+          echo "2. HELM_CHART_PATH: '${{ env.HELM_CHART_PATH }}'"
+          echo "3. K8S_NAMESPACE: '${{ env.K8S_NAMESPACE }}'"
+          echo "-------------------------------------------"
+          echo "Current PWD: $(pwd)"
+          echo "Listing contents of PWD (where checkout happens):"
+          ls -la
+          echo "-------------------------------------------"
+          echo "Verifying HELM_CHART_PATH ('${{ env.HELM_CHART_PATH }}'):"
+          CHART_PATH_TO_TEST="${{ env.HELM_CHART_PATH }}" # Use a shell var for clarity
+          if [ -z "$CHART_PATH_TO_TEST" ]; then
+            echo "ERROR: HELM_CHART_PATH is empty!"
             exit 1
           fi
-
-          echo "--- File System Check ---"
-          echo "Current PWD: $(pwd)"
-          echo "Listing contents of PWD:"
-          ls -la
-
-          if [ -d "${CHART_PATH_VAL}" ]; then
-            echo "SUCCESS: HELM_CHART_PATH '${CHART_PATH_VAL}' exists as a directory."
-            echo "Listing contents of '${CHART_PATH_VAL}':"
-            ls -la "${CHART_PATH_VAL}"
-            if [ -f "${CHART_PATH_VAL}/Chart.yaml" ]; then
-              echo "SUCCESS: Chart.yaml found in '${CHART_PATH_VAL}'."
+          if [ -d "$CHART_PATH_TO_TEST" ]; then
+            echo "SUCCESS: '$CHART_PATH_TO_TEST' exists as a directory."
+            echo "Listing contents of '$CHART_PATH_TO_TEST':"
+            ls -la "$CHART_PATH_TO_TEST"
+            if [ -f "$CHART_PATH_TO_TEST/Chart.yaml" ]; then
+              echo "SUCCESS: Chart.yaml found in '$CHART_PATH_TO_TEST'."
             else
-              echo "ERROR: Chart.yaml NOT found in '${CHART_PATH_VAL}'!"
-              exit 1
+              echo "ERROR: Chart.yaml NOT found in '$CHART_PATH_TO_TEST'!"
+              exit 1 # Fail fast if Chart.yaml is missing
             fi
           else
-            echo "ERROR: HELM_CHART_PATH '${CHART_PATH_VAL}' does NOT exist as a directory."
-            echo "Attempting to list ./charts (if it exists relative to PWD):"
+            echo "ERROR: '$CHART_PATH_TO_TEST' does NOT exist as a directory."
+            echo "Listing contents of './charts' (if it exists relative to PWD) for context:"
             ls -la ./charts || echo "'./charts' directory not found at PWD."
-            exit 1
+            exit 1 # Fail fast if chart path is wrong
           fi
-          echo "--- End of Debugging ---"
+          echo "--- End of Path Debugging ---"
+      - name: Test Helm Lint (Pre-check)
+        run: |
+          echo "Attempting to lint chart at: ${{ env.HELM_CHART_PATH }}"
+          helm lint "${{ env.HELM_CHART_PATH }}"
+          echo "Helm lint completed successfully."
       - name: Deploy Helm chart
         run: |
-          # Ensure no leading/trailing whitespace issues with backslashes for line continuation
-          # Also, quote arguments that might contain special characters or come from variables, as a best practice.
+          echo "--- Preparing for Helm Upgrade ---"
+          echo "Using Release Name: '${{ env.HELM_RELEASE_NAME }}'"
+          echo "Using Chart Path:   '${{ env.HELM_CHART_PATH }}'"
+          echo "Using Namespace:    '${{ env.K8S_NAMESPACE }}'"
+          echo "--- Helm Command ---"
+
+          # Adding --debug to Helm for more verbose output from Helm itself
           helm upgrade --install "${{ env.HELM_RELEASE_NAME }}" \
             "${{ env.HELM_CHART_PATH }}" \
             --namespace "${{ env.K8S_NAMESPACE }}" \
@@ -105,22 +107,5 @@ jobs:
             --set serviceAccount.name="${{ env.KSA_NAME }}" \
             --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="${{ secrets.TF_OUTPUT_GSA_EMAIL }}" \
             --wait \
-            --timeout 10m
-            # --debug # Uncomment for verbose Helm output if the problem persists after path verification
-      - name: Deploy Helm chart
-        run: |
-          helm upgrade --install ${{ env.HELM_RELEASE_NAME }} \
-            ${{ env.HELM_CHART_PATH }} \
-            --namespace ${{ env.K8S_NAMESPACE }} \
-            --create-namespace \
-            --values ${{ env.HELM_CHART_PATH }}/values.yaml \
-            --values ${{ env.HELM_CHART_PATH }}/values/deploy-values.yml \
-            --set image.repository="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}" \
-            --set image.tag="${{ github.sha }}" \
-            --set secrets.polygonscanApiKey="${{ secrets.POLYGONSCAN_API_KEY }}" \
-            --set serviceAccount.create=true \ # Ensure KSA is created by Helm if not present
-            --set serviceAccount.name="${{ env.KSA_NAME }}" \ # Ensure KSA name matches TF WI binding
-            --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="${{ secrets.TF_OUTPUT_GSA_EMAIL }}" \
-            --wait \
-            --timeout 10m # Wait for resources to be ready, with a timeout
-            # --debug # Uncomment for verbose Helm output during troubleshooting
+            --timeout 10m \
+            --debug
