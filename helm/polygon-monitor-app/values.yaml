@@ -53,8 +53,8 @@ ingress:
   hosts:
     - host: app.example.nip.io # Placeholder, will be overridden by CI/CD
       paths:
-        - path: /*
-          pathType: ImplementationSpecific
+        - path: /
+          pathType: Prefix
   tls:
     # cert-manager will create and manage the secret.
     # The secretName is derived from the host if not specified,
