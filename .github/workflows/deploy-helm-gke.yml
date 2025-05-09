@@ -116,7 +116,7 @@ jobs:
             --namespace "${{ env.K8S_NAMESPACE }}" \
             --create-namespace \
             --values "${{ env.HELM_CHART_PATH }}/values.yaml" \
-            # Optional: --values "${{ env.HELM_CHART_PATH }}/values/deploy-values.yml" \
+            # Optional: --values "${{ env.HELM_CHART_PATH }}/values/deploy-values.yml"  # Removed trailing backslash here
             --set image.repository="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}" \
             --set image.tag="${{ github.sha }}" \
             --set secrets.polygonscanApiKey="${{ secrets.POLYGONSCAN_API_KEY }}" \
