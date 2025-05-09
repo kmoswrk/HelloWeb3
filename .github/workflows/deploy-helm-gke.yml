@@ -1,0 +1,67 @@
+name: Deploy Application to GKE via Helm
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual triggering from the Actions tab
+env:
+  # --- GCP Configuration (align with your Terraform and Docker CI) ---
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }} # For gcloud commands
+  GCP_REGION: "us-central1" # Default region from your variables.tf
+  GKE_CLUSTER_NAME: "polygon-monitor-cluster" # Default cluster name from your variables.tf
+  # --- Artifact Registry & Image Configuration (align with your Docker CI) ---
+  GAR_REPO_NAME: "polygon-monitor-repo"
+  IMAGE_NAME: "polygon-monitor-app"
+  # --- Helm Configuration ---
+  HELM_RELEASE_NAME: "polygon-monitor-app"
+  # Namespace where the app will be deployed, must match var.polygon_monitor_app_k8s_namespace
+  K8S_NAMESPACE: "polygon-monitor"
+  # KSA name, must match var.polygon_monitor_app_k8s_sa_name and values.yaml serviceAccount.name
+  KSA_NAME: "polygon-monitor-app-ksa"
+  HELM_CHART_PATH: "./charts/polygon-monitor-app" # Adjust if your chart is elsewhere
+permissions:
+  contents: "read"
+  id-token: "write" # Required for Workload Identity Federation
+jobs:
+  deploy-to-gke:
+    name: Deploy to GKE
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: "google-github-actions/auth@v2"
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }} # This SA needs GKE deploy permissions
+      - name: Set up Cloud SDK
+        uses: "google-github-actions/setup-gcloud@v2"
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+      - name: Get GKE cluster credentials
+        run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} \
+            --region ${{ env.GCP_REGION }} \
+            --project ${{ env.GCP_PROJECT_ID }}
+      - name: Set up Helm
+        uses: azure/setup-helm@v3 # Or docker/setup-helm-action, or manual install
+        with:
+          version: "v3.12.3" # Specify a recent Helm version
+      - name: Deploy Helm chart
+        run: |
+          helm upgrade --install ${{ env.HELM_RELEASE_NAME }} \
+            ${{ env.HELM_CHART_PATH }} \
+            --namespace ${{ env.K8S_NAMESPACE }} \
+            --create-namespace \
+            --values ${{ env.HELM_CHART_PATH }}/values.yaml \
+            --values ${{ env.HELM_CHART_PATH }}/values/deploy-values.yml \
+            --set image.repository="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ env.IMAGE_NAME }}" \
+            --set image.tag="${{ github.sha }}" \
+            --set secrets.polygonscanApiKey="${{ secrets.POLYGONSCAN_API_KEY }}" \
+            --set serviceAccount.create=true \ # Ensure KSA is created by Helm if not present
+            --set serviceAccount.name="${{ env.KSA_NAME }}" \ # Ensure KSA name matches TF WI binding
+            --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="${{ secrets.TF_OUTPUT_GSA_EMAIL }}" \
+            --wait \
+            --timeout 10m # Wait for resources to be ready, with a timeout
+            # --debug # Uncomment for verbose Helm output during troubleshooting

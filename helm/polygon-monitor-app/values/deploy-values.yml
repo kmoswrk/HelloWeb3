@@ -1,0 +1,29 @@
+image:
+  repository: "us-central1-docker.pkg.dev/YOUR_GCP_PROJECT_ID/polygon-monitor-repo/polygon-monitor-app"
+  tag: "latest" # This will be overridden by CI/CD with the specific git SHA
+
+# KSA = Kubernetes Service Account
+# GSA = Google Service Account (for Workload Identity)
+serviceAccount:
+  # name: "polygon-monitor-app-ksa" # This is already the default in your chart's values.yaml
+  annotations:
+    # This will be populated by CI/CD or helm install command if not set here
+    iam.gke.io/gcp-service-account: "polygon-monitor-app-sa@grounded-pivot-459013-d1.iam.gserviceaccount.com"
+
+# Secrets to be created and mounted.
+# The key 'polygonscanApiKey' will be used to create a K8s secret.
+# The value for this MUST be provided during helm install/upgrade via --set or CI/CD secret.
+secrets:
+  polygonscanApiKey: "" # Leave empty here, will be set by CI/CD
+
+# service:
+#   type: LoadBalancer # Already default
+#   port: 80 # Already default
+
+# resources: # You can override defaults if needed
+#   limits:
+#     cpu: 750m
+#     memory: 768Mi
+#   requests:
+#     cpu: 300m
+#     memory: 384Mi
