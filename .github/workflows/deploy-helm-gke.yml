@@ -18,7 +18,7 @@ env:
   K8S_NAMESPACE: "polygon-monitor"
   # KSA name, must match var.polygon_monitor_app_k8s_sa_name and values.yaml serviceAccount.name
   KSA_NAME: "polygon-monitor-app-ksa"
-  HELM_CHART_PATH: "./charts/polygon-monitor-app" # Adjust if your chart is elsewhere
+  HELM_CHART_PATH: "./helm/polygon-monitor-app" # Adjust if your chart is elsewhere
 permissions:
   contents: "read"
   id-token: "write" # Required for Workload Identity Federation
